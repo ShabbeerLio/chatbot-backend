@@ -18,6 +18,7 @@ import couponRoutes from "./routes/coupon.js";
 import subscriptionRoutes from "./routes/subscription.js";
 import paymentRoutes from "./routes/payments.js";
 import Call from "./models/Call.js";
+import callRoutes from "./routes/call.js";
 
 connectDB();
 
@@ -36,6 +37,7 @@ app.use("/api/plans", planRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/call", callRoutes);
 app.get("/", (req, res) => {
   res.json({ message: "Hello Nikha-e-muslim Backend! " });
 });
