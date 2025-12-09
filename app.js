@@ -17,6 +17,7 @@ import planRoutes from "./routes/plans.js";
 import couponRoutes from "./routes/coupon.js";
 import subscriptionRoutes from "./routes/subscription.js";
 import paymentRoutes from "./routes/payments.js";
+import Call from "./models/Call.js";
 
 connectDB();
 
@@ -103,6 +104,125 @@ io.on("connection", (socket) => {
       console.log("📩 Message sent & chat list updated");
     } catch (error) {
       console.error("❌ sendMessage error:", error.message);
+    }
+  });
+
+  // ---------- NEW: CALL SIGNALING ----------
+
+  // 1️⃣ Start call (audio or video)
+  socket.on("startCall", async ({ fromUserId, toUserId, callType, offer }) => {
+    try {
+      const receiverSocketId = onlineUsers.get(toUserId);
+
+      // create call log (optional)
+      const callDoc = await Call.create({
+        caller: fromUserId,
+        receiver: toUserId,
+        type: callType || "audio",
+        status: receiverSocketId ? "ringing" : "missed",
+      });
+
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit("incomingCall", {
+          callId: callDoc._id,
+          fromUserId,
+          callType,
+          offer, // WebRTC offer SDP
+        });
+      }
+
+      socket.emit("callStarted", {
+        callId: callDoc._id,
+        ringing: !!receiverSocketId,
+      });
+
+      console.log(`📞 Call started ${fromUserId} -> ${toUserId}`);
+    } catch (error) {
+      console.error("startCall error:", error.message);
+      socket.emit("callError", { message: "Unable to start call" });
+    }
+  });
+
+  // 2️⃣ Answer call
+  socket.on("answerCall", async ({ callId, fromUserId, toUserId, answer }) => {
+    try {
+      const callerSocketId = onlineUsers.get(toUserId); // toUserId = caller
+
+      if (callerSocketId) {
+        io.to(callerSocketId).emit("callAnswered", {
+          callId,
+          fromUserId,
+          answer, // WebRTC answer SDP
+        });
+      }
+
+      await Call.findByIdAndUpdate(callId, { status: "accepted" });
+
+      console.log(`✅ Call ${callId} answered`);
+    } catch (error) {
+      console.error("answerCall error:", error.message);
+      socket.emit("callError", { message: "Unable to answer call" });
+    }
+  });
+
+  // 3️⃣ Reject / decline call
+  socket.on("rejectCall", async ({ callId, fromUserId, toUserId }) => {
+    try {
+      const otherSocketId = onlineUsers.get(toUserId);
+      if (otherSocketId) {
+        io.to(otherSocketId).emit("callRejected", {
+          callId,
+          by: fromUserId,
+        });
+      }
+
+      await Call.findByIdAndUpdate(callId, { status: "rejected", endedAt: new Date() });
+
+      console.log(`🚫 Call ${callId} rejected`);
+    } catch (error) {
+      console.error("rejectCall error:", error.message);
+    }
+  });
+
+  // 4️⃣ End call (any side)
+  socket.on("endCall", async ({ callId, fromUserId, toUserId }) => {
+    try {
+      const otherSocketId = onlineUsers.get(toUserId);
+      if (otherSocketId) {
+        io.to(otherSocketId).emit("callEnded", {
+          callId,
+          by: fromUserId,
+        });
+      }
+
+      const callDoc = await Call.findById(callId);
+      if (callDoc && !callDoc.endedAt) {
+        const endedAt = new Date();
+        const durationSec = Math.floor((endedAt - callDoc.startedAt) / 1000);
+        callDoc.endedAt = endedAt;
+        callDoc.durationSec = durationSec;
+        callDoc.status = callDoc.status === "ringing" ? "missed" : "ended";
+        await callDoc.save();
+      }
+
+      console.log(`🏁 Call ${callId} ended`);
+    } catch (error) {
+      console.error("endCall error:", error.message);
+    }
+  });
+
+  // 5️⃣ ICE Candidates exchange
+  socket.on("iceCandidate", ({ fromUserId, toUserId, candidate }) => {
+    try {
+      const otherSocketId = onlineUsers.get(toUserId);
+      if (otherSocketId) {
+        io.to(otherSocketId).emit("iceCandidate", {
+          fromUserId,
+          candidate,
+        });
+      }
+    } catch (error) {
+      console.error("iceCandidate error:", error.message);
     }
   });
 
