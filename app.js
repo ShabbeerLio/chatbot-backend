@@ -190,42 +190,51 @@ io.on("connection", (socket) => {
   });
 
   // 4️⃣ End call (any side)
-  socket.on("endCall", async ({ callId, fromUserId, toUserId }) => {
-    try {
-      const otherSocketId = onlineUsers.get(toUserId);
-      const selfSocketId = onlineUsers.get(fromUserId);
+socket.on("endCall", async ({ callId, fromUserId, toUserId }) => {
+  try {
+    const otherSocketId = onlineUsers.get(toUserId);
+    const selfSocketId = onlineUsers.get(fromUserId);
 
-      // Notify the other user
-      if (otherSocketId) {
-        io.to(otherSocketId).emit("callEnded", {
-          callId,
-          by: fromUserId,
-        });
-      }
-
-      // Also notify the one who ended (to reset their UI as well)
-      if (selfSocketId) {
-        io.to(selfSocketId).emit("callEnded", {
-          callId,
-          by: fromUserId,
-        });
-      }
-
-      const callDoc = await Call.findById(callId);
-      if (callDoc && !callDoc.endedAt) {
-        const endedAt = new Date();
-        const durationSec = Math.floor((endedAt - callDoc.startedAt) / 1000);
-        callDoc.endedAt = endedAt;
-        callDoc.durationSec = durationSec;
-        callDoc.status = callDoc.status === "ringing" ? "missed" : "ended";
-        await callDoc.save();
-      }
-
-      console.log(`🏁 Call ${callId} ended`);
-    } catch (error) {
-      console.error("endCall error:", error.message);
+    // Notify both users that call ended
+    if (otherSocketId) {
+      io.to(otherSocketId).emit("callEnded", {
+        callId,
+        by: fromUserId,
+      });
     }
-  });
+    if (selfSocketId) {
+      io.to(selfSocketId).emit("callEnded", {
+        callId,
+        by: fromUserId,
+      });
+    }
+
+    const callDoc = await Call.findById(callId);
+    if (callDoc && !callDoc.endedAt) {
+      const endedAt = new Date();
+      const durationSec = Math.floor((endedAt - callDoc.startedAt) / 1000);
+
+      callDoc.endedAt = endedAt;
+      callDoc.durationSec = durationSec;
+
+      // 🔍 Status rules:
+      // - still "ringing"  -> nobody picked -> missed
+      // - "accepted"       -> normal ended call
+      // - "missed" / "rejected" -> keep as is (don't override)
+      if (callDoc.status === "ringing") {
+        callDoc.status = "missed";
+      } else if (callDoc.status === "accepted") {
+        callDoc.status = "ended";
+      }
+
+      await callDoc.save();
+    }
+
+    console.log(`🏁 Call ${callId} ended`);
+  } catch (error) {
+    console.error("endCall error:", error.message);
+  }
+});
 
   // 5️⃣ ICE Candidates exchange
   socket.on("iceCandidate", ({ fromUserId, toUserId, candidate }) => {
