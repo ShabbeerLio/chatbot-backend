@@ -13,8 +13,8 @@ router.get("/history/:partnerId", fetchUser, async (req, res) => {
         { caller: req.params.partnerId, receiver: req.user.id },
       ],
     })
-      .sort({ startedAt: -1 })
-      .select("-__v");
+      .populate("caller receiver", "name profilePic _id") // ✅ include _id
+      .sort({ startedAt: -1 });
 
     res.json(calls);
   } catch (err) {
@@ -23,17 +23,29 @@ router.get("/history/:partnerId", fetchUser, async (req, res) => {
 });
 
 // Get all call history for the logged user
-router.get("/all", fetchUser, async (req, res) => {
+// router.get("/all", fetchUser, async (req, res) => {
+//   try {
+//     console.log(req.user, "user");
+//     const calls = await Call.find(req.user.id).sort({ startedAt: -1 });
+
+//     res.json(calls);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// 👉 Get ALL calls (Admin or Debug use)
+router.get("/all", async (req, res) => {
   try {
-    const calls = await Call.find({
-      $or: [{ caller: req.user.id }, { receiver: req.user.id }],
-    })
-      .populate("caller receiver", "name profilePic")
-      .sort({ startedAt: -1 });
+    const calls = await Call.find()
+      .populate("caller", "name profilePic.url")
+      .populate("receiver", "name profilePic.url")
+      .sort({ createdAt: -1 });
 
     res.json(calls);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("Error fetching calls:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
