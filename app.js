@@ -176,7 +176,10 @@ io.on("connection", (socket) => {
         });
       }
 
-      await Call.findByIdAndUpdate(callId, { status: "rejected", endedAt: new Date() });
+      await Call.findByIdAndUpdate(callId, {
+        status: "rejected",
+        endedAt: new Date(),
+      });
 
       console.log(`🚫 Call ${callId} rejected`);
     } catch (error) {
@@ -188,8 +191,19 @@ io.on("connection", (socket) => {
   socket.on("endCall", async ({ callId, fromUserId, toUserId }) => {
     try {
       const otherSocketId = onlineUsers.get(toUserId);
+      const selfSocketId = onlineUsers.get(fromUserId);
+
+      // Notify the other user
       if (otherSocketId) {
         io.to(otherSocketId).emit("callEnded", {
+          callId,
+          by: fromUserId,
+        });
+      }
+
+      // Also notify the one who ended (to reset their UI as well)
+      if (selfSocketId) {
+        io.to(selfSocketId).emit("callEnded", {
           callId,
           by: fromUserId,
         });
